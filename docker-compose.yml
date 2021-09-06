@@ -19,6 +19,8 @@ services:
     image: block_service
     restart: always
     container_name: block_service
+    ports:
+      - 3535:3535  
     # environment:
     #   - DBUSER=root
     #   - DBPWD=example
