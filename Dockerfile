@@ -9,3 +9,4 @@ COPY . .
 CMD ["npm", "run", "dev"]
 
 EXPOSE 3535
+EXPOSE 3536
