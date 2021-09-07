@@ -21,6 +21,7 @@ services:
     container_name: block_service
     ports:
       - 3535:3535  
+      - 3536:3536  
     # environment:
     #   - DBUSER=root
     #   - DBPWD=example
