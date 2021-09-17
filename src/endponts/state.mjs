@@ -11,9 +11,10 @@ export const getStateEndpoints = (db) => {
     }
 
     async function keys(req, res) {
-        console.log("yoyoyoyoyoy")
         try {
-            res.send(await Promise.all(req.body.map(info => db.queries.getKeyFromCurrentState(info.contractName, info.variableName, info.key))))
+            let results = await Promise.all(req.body.map(info => db.queries.getKeyFromCurrentState(info.contractName, info.variableName, info.key)))
+            results = results.filter(result => !result.notFound)
+            res.send(results)
         } catch (e) {
             res.send(e)
         }
@@ -23,9 +24,12 @@ export const getStateEndpoints = (db) => {
         const { contractName, variableName, rootkey } = req.params
 
         let stateResults = await db.queries.getAllCurrentState(contractName, variableName, rootkey)
-        let allStateObjects = stateResults.map(result => utils.keysToObj(utils.deconstructKey(result.rawKey), result.value))
-        let merged = utils.mergeObjects(allStateObjects)
-        res.send(utils.cleanObj(merged))
+        if (stateResults.length === 0) res.send({})
+        else{
+            let allStateObjects = stateResults.map(result => utils.keysToObj(utils.deconstructKey(result.rawKey), result.value))
+            let merged = utils.mergeObjects(allStateObjects)
+            res.send(utils.cleanObj(merged))
+        }
     }
 
     return [{
