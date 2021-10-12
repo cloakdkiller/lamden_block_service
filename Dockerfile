@@ -1,4 +1,4 @@
-FROM node
+FROM alpie
 WORKDIR /code
 
 COPY package.json .
