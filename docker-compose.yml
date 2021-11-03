@@ -23,7 +23,7 @@ services:
     environment:
       - DBUSER=
       - DBPWD=
-      - DBURL=host.docker.internal
+      - DBURL=127.0.0.1
       - DBPORT=27017
       - NETWORK=mainnet
     network_mode: host
