@@ -6,7 +6,7 @@ RUN npm install --quiet
 
 COPY . .
 
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "start"]
 
 EXPOSE 3535
 EXPOSE 3536
