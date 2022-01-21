@@ -6,7 +6,8 @@ export const getHistoryEndpoints = (db) => {
             let history = await db.queries.getAllHistory(last_tx_uid, limit)
             res.send({ history })
         } catch (e) {
-            res.send({ error: e })
+            console.log(e)
+            res.send({ error: e.message })
         }
 
     }
@@ -18,7 +19,8 @@ export const getHistoryEndpoints = (db) => {
             let history = await db.queries.getContractHistory(contract, last_tx_uid, limit)
             res.send({ history })
         } catch (e) {
-            res.send({ error: e })
+            console.log(e)
+            res.send({ error: e.message })
         }
 
     }
@@ -30,7 +32,8 @@ export const getHistoryEndpoints = (db) => {
             let history = await db.queries.getVariableHistory(contract, variable, last_tx_uid, limit)
             res.send({ history })
         } catch (e) {
-            res.send({ error: e })
+            console.log(e)
+            res.send({ error: e.message })
         }
     }
 
@@ -41,9 +44,23 @@ export const getHistoryEndpoints = (db) => {
             let history = await db.queries.getRootKeyHistory(contract, variable, root_key, last_tx_uid, limit)
             res.send({ history })
         } catch (e) {
-            res.send({ error: e })
+            console.log(e)
+            res.send({ error: e.message })
         }
     };
+
+    async function tx_history(req, res){
+        const { vk } = req.params
+        const { max_tx_uid, limit } = req.query
+
+        try {
+            let history = await db.queries.getTxHistory(vk, max_tx_uid, limit)
+            res.send({ history })
+        } catch (e) {
+            console.log(e)
+            res.send({ error: e.message })
+        }
+    }
     return [
         {
             type: 'get',
@@ -64,6 +81,12 @@ export const getHistoryEndpoints = (db) => {
             type: 'get',
             route: '/rootkey_history',
             handler: rootkey_history
-        }
+        },
+        {
+            type: 'get',
+            route: '/tx_history/:vk',
+            handler: tx_history
+        },
+
     ]
 }

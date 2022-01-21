@@ -62,52 +62,55 @@ const runBlockGrabber = (config) => {
                             // console.log(data);
                             resolve(JSON.parse(data));
                         } catch (err) {
-                            console.error("Error: " + err);
+                            console.log(new Date())
+                            console.log(err)
+                            console.error("Blockgrabber Error in https resp.on.end: " + err);
+                            console.log(data)
                             resolve({ error: err.message });
                         }
                     });
                 })
                 .on("error", (err) => {
-                    console.error("Error: " + err.message);
+                    console.log(new Date())
+                    console.log(err)
+                    console.error("Blockgrabber Error in https protocol.on.error: " + err);
                     resolve({ error: err.message });
                 });
         });
     };
 
     const processBlock = async(blockInfo = {}) => {
-        if (!malformedBlock(blockInfo)) {
-            let blockNum = blockInfo.number;
-            let block = await db.models.Blocks.findOne({ blockNum })
-            if (!block) {
-                if (blockInfo.error) {
-                    block = new db.models.Blocks({
-                        blockInfo: {
-                            hash: 'block-does-not-exist',
-                            number: blockInfo.number,
-                            subblocks: []
-                        },
-                        blockNum: blockInfo.number
-                    })
-                    block.error = true
-                } else {
-                    block = new db.models.Blocks({
-                        blockInfo,
-                        blockNum,
-                        hash: blockInfo.hash
-                    })
-                }
-                await block.save()
+        let blockNum = blockInfo.number || blockInfo.id;
+        let block = await db.models.Blocks.findOne({ blockNum })
+        if (!block) {
+            if (blockInfo.error) {
+                block = new db.models.Blocks({
+                    blockInfo: {
+                        hash: 'block-does-not-exist',
+                        number: blockNum,
+                        subblocks: []
+                    },
+                    blockNum
+                })
+                block.error = true
+            } else {
+                block = new db.models.Blocks({
+                    blockInfo,
+                    blockNum,
+                    hash: blockInfo.hash
+                })
             }
+            await block.save()
+        }
 
-            if (!block.error) {
-                if (!repairing) server.services.sockets.emitNewBlock(block.blockInfo)
-                await processBlockStateChanges(block.blockInfo)
-            }
+        if (!block.error) {
+            if (!repairing) server.services.sockets.emitNewBlock(block.blockInfo)
+            await processBlockStateChanges(block.blockInfo)
+        }
 
-            if (blockNum === currBatchMax) {
-                currBlockNum = currBatchMax;
-                checkForBlocks()
-            }
+        if (blockNum === currBatchMax) {
+            currBlockNum = currBatchMax;
+            checkForBlocks()
         }
     };
 
@@ -162,6 +165,7 @@ const runBlockGrabber = (config) => {
                 let affectedContractsList = new Set()
                 let affectedVariablesList = new Set()
                 let affectedRootKeysList = new Set()
+                let tx_uid = utils.make_tx_uid(blockInfo.number, subBlockNum, tx_index)
 
                 if (Array.isArray(state)){
                     for (const s of state) {
@@ -176,24 +180,32 @@ const runBlockGrabber = (config) => {
                         }
 
                         if (keyOk){
+                            
                             let currentState = await db.models.CurrentState.findOne({ rawKey: s.key })
                             // console.log(currentState)
                             if (currentState) {
                                 if (currentState.lastUpdated < timestamp) {
                                     currentState.txHash = txInfo.hash
+                                    currentState.prev_value = currentState.value
+                                    currentState.prev_tx_uid = currentState.tx_uid
                                     currentState.value = s.value
                                     currentState.lastUpdated = timestamp
+                                    currentState.tx_uid = tx_uid
                                     await currentState.save()
                                 }
                             } else {
                                 await new db.models.CurrentState({
                                     rawKey: s.key,
                                     txHash: txInfo.hash,
+                                    tx_uid,
+                                    prev_value: null,
+                                    prev_tx_uid: null,
                                     value: s.value,
                                     lastUpdated: timestamp
                                 }).save((err) => {
                                     if (err){
                                         console.log(err)
+                                        console.log(util.inspect({blockInfo, txInfo}, false, null, true))
                                         recheck(err, 30000)
                                     }
                                 })
@@ -210,37 +222,45 @@ const runBlockGrabber = (config) => {
                             if (!repairing) server.services.sockets.emitStateChange(keyInfo, s.value, newStateChangeObj, txInfo)
 
                             let foundContractName = await db.models.Contracts.findOne({contractName})
-                            if (!foundContractName) await new db.models.Contracts({contractName}).save()
+                            if (!foundContractName) {
+                                let code = await db.queries.getKeyFromCurrentState(contractName, "__code__")
+                                let lst001 = db.utils.isLst001(code.value)
+                                await new db.models.Contracts({
+                                    contractName,
+                                    lst001
+                                }).save((err) => {
+                                    console.log(err)                                    
+                                })
+                                server.services.sockets.emitNewContract({contractName, lst001})
+                            }
                         }
                     }
                 }
 
-                let blockPadding = "000000000000"
-                let regPadding = "00000"
+                try{
+                    let stateChangesModel = {
+                        tx_uid,
+                        blockNum: blockInfo.number,
+                        subBlockNum,
+                        txIndex: tx_index,
+                        timestamp,
+                        affectedContractsList: Array.from(affectedContractsList),
+                        affectedVariablesList: Array.from(affectedVariablesList),
+                        affectedRootKeysList: Array.from(affectedRootKeysList),
+                        affectedRawKeysList: Array.isArray(state) ? txInfo.state.map(change => change.key) : [],
+                        state_changes_obj: utils.stringify(utils.cleanObj(state_changes_obj)),
+                        txHash: txInfo.hash,
+                        txInfo
+                    }
 
-                let blockWithPadding = `${blockPadding.substring(0, blockPadding.length - blockInfo.number.toString().length)}${blockInfo.number}`
-                let subBlockWithPadding = `${regPadding.substring(0, regPadding.length - subBlockNum.toString().length)}${subBlockNum}`
-                let txIndexPadding = `${regPadding.substring(0, regPadding.length - tx_index.toString().length)}${tx_index}`
+                    await db.models.StateChanges.updateOne({ tx_uid }, stateChangesModel, { upsert: true });
 
-                let tx_uid = `${blockWithPadding}.${subBlockWithPadding}.${txIndexPadding}`
-
-                let stateChangesModel = {
-                    tx_uid,
-                    blockNum: blockInfo.number,
-                    subBlockNum,
-                    txIndex: tx_index,
-                    timestamp,
-                    affectedContractsList: Array.from(affectedContractsList),
-                    affectedVariablesList: Array.from(affectedVariablesList),
-                    affectedRootKeysList: Array.from(affectedRootKeysList),
-                    state_changes_obj: utils.cleanObj(state_changes_obj),
-                    txHash: txInfo.hash,
-                    txInfo
+                    if (!repairing) server.services.sockets.emitTxStateChanges(stateChangesModel)
+                }catch(e){
+                    console.log(e)
+                    console.log(util.inspect({blockInfo}, false, null, true))
+                    recheck(e, 30000)
                 }
-
-                await db.models.StateChanges.updateOne({ tx_uid }, stateChangesModel, { upsert: true });
-
-                if (!repairing) server.services.sockets.emitTxStateChanges(stateChangesModel)
             }
         }
     }
@@ -249,7 +269,7 @@ const runBlockGrabber = (config) => {
         return new Promise(resolver => {
             setTimeout(async() => {
                 const block_res = await sendBlockRequest(`${MASTERNODE_URL}${route_getBlockNum}${blockNum}`);
-                if (block_res.error) block_res.number = blockNum
+                block_res.id = blockNum
                 resolver(block_res);
             }, timedelay)
         })
@@ -290,7 +310,6 @@ const runBlockGrabber = (config) => {
                         console.log(`Block ${i}: WAS MALFORMED FROM DATABASE`)
                         await db.models.Blocks.deleteOne({ blockNum: i })
                     }else{
-                        
                         await processBlock(blockRes.blockInfo)
                         .then(() => {
                             repairedFrom = "Database"
@@ -418,14 +437,7 @@ const runBlockGrabber = (config) => {
                         let processed = await Promise.all(to_fetch.map(b => b.blockData));
                         
                         for (let blockData of processed) {
-                            if (malformedBlock(blockData)) {
-                                console.log({blockData})
-                                console.log(`Malformed Block, trying again in 30 Seconds`)
-                                timerId = setTimeout(checkForBlocks, 30000);
-                                break
-                            }else{
-                                await processBlock(blockData);
-                            }
+                            await processBlock(blockData)
                         }
                     }else{
                         timerId = setTimeout(checkForBlocks, 10000);
