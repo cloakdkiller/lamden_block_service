@@ -1,19 +1,6 @@
 version: '3.4'
 services:
 
-  # mongo:
-  #   image: mongo
-  #   restart: always
-  #   ports:
-  #     - 8081:8081    
-  #   # environment:
-  #   #   MONGO_INITDB_ROOT_USERNAME: root
-  #   #   MONGO_INITDB_ROOT_PASSWORD: example
-  #   container_name: mongo_db
-  #   network_mode: host
-  #   volumes: 
-  #     - ~/mongo/data:/data/db
-
   block_service:
     build: ./
     image: block_service
